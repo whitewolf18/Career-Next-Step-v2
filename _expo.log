@@ -1,0 +1,31 @@
+env: load .env
+env: export EXPO_PUBLIC_SUPABASE_ANON_KEY EXPO_PUBLIC_SUPABASE_URL
+Starting project at C:\Users\farat\Desktop\Career-Next-Step-v2
+Using src/app as the root directory for Expo Router.
+React Compiler enabled
+Starting Metro Bundler
+
+Waiting on http://localhost:8081
+
+Logs for your project will appear below.
+Web Bundled 11614ms node_modules\expo-router\entry.js (150 modules)
+λ Bundled 11721ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1078 modules)
+Web Bundled 4732ms node_modules\expo-router\entry.js (1 module)
+λ Bundled 4990ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1 module)
+λ Bundled 2533ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1 module)
+Web Bundled 3795ms node_modules\expo-router\entry.js (1 module)
+λ Bundled 50ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1 module)
+Web Bundled 554ms node_modules\expo-router\entry.js (1 module)
+Web Bundled 1164ms node_modules\expo-router\entry.js (796 modules)
+Web Bundled 1520ms node_modules\expo-router\entry.js (1 module)
+Web Bundled 922ms node_modules\expo-router\entry.js (760 modules)
+Web Bundled 90ms node_modules\expo-router\entry.js (1 module)
+Web Bundled 44ms node_modules\expo-router\entry.js (1 module)
+Web Bundled 5849ms node_modules\expo-router\entry.js (1 module)
+λ Bundled 5934ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1 module)
+Web Bundled 2537ms node_modules\expo-router\entry.js (1034 modules)
+Android Bundled 1916ms node_modules\expo-router\entry.js (1648 modules)
+Web Bundled 3814ms node_modules\expo-router\entry.js (1 module)
+λ Bundled 4022ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1 module)
+Web Bundled 1484ms node_modules\expo-router\entry.js (1 module)
+Web Bundled 1284ms node_modules\expo-router\entry.js (1 module)

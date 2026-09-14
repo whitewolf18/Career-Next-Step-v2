@@ -1,0 +1,4 @@
+project_id = "career-next-step"
+
+[functions.create-admin]
+verify_jwt = true
