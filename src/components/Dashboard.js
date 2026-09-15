@@ -24,9 +24,11 @@ import Messages from "./Messages";
 import { StudentAnalyticsSection } from "./AnalyticsCharts";
 import Events from "./Events";
 import NotificationBell from "./NotificationBell";
+import Announcements from "./Announcements";
 import BrandMark from "./BrandMark";
 import TabBar from "./TabBar";
 import Tutorial from "./Tutorial";
+import ChatBot from "./ChatBot";
 import { Brand } from "../theme/brand";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -1246,6 +1248,11 @@ export default function Dashboard({
             </Pressable>
           </View>
 
+<View style={ue.sectionRow}>
+            <Text style={ue.sectionTitle}>📣 Institution updates</Text>
+          </View>
+
+          <Announcements embedded />
           <View style={ue.sectionRow}>
             <Text style={ue.sectionTitle}>Recommended for you</Text>
             <Pressable onPress={() => setActivePage("Recommended Jobs")}>
@@ -1877,6 +1884,9 @@ export default function Dashboard({
           onFinish={() => setShowTutorial(false)}
         />
       )}
+
+      {/* PERSISTENT AI HELPER (brief 2.6) — Nexi stays on after onboarding. */}
+      <ChatBot />
 
       {/* Bottom tab bar — Meetup-style anchors */}
       <TabBar currentPage={activePage} onSelectPage={setActivePage} />

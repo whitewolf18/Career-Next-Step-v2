@@ -17,6 +17,9 @@ import {
 } from "../lib/supabase";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import NotificationBell from "./NotificationBell";
+import Announcements from "./Announcements";
+import Tutorial from "./Tutorial";
+import ChatBot from "./ChatBot";
 
 import Candidates from "./Candidates";
 import CandidateProfile from "../components/CandidateProfile";
@@ -1628,6 +1631,21 @@ function BusinessDashboard({ user, onLogout }) {
             </View>
           </View>
         </View>
+<View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <View>
+                <Text style={styles.cardTitle}>
+                  📣 Institution Updates
+                </Text>
+
+                <Text style={styles.cardDescription}>
+                  Announcements from the platform administrators.
+                </Text>
+              </View>
+            </View>
+
+            <Announcements embedded />
+          </View>
       </ScrollView>
     );
   }
@@ -2683,6 +2701,9 @@ function BusinessDashboard({ user, onLogout }) {
 
         {renderCurrentPage()}
       </View>
+
+      {/* PERSISTENT AI HELPER (brief 2.6) — Nexi stays on after onboarding. */}
+      <ChatBot accent="#16A34A" />
 
       {selectedCandidate && (
         <View

@@ -77,33 +77,66 @@ export default function Feed() {
     const { supabase, userId } = session;
 
     try {
-      const [profileRes, postsRes] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select("id, full_name, role")
-          .eq("id", userId)
-          .maybeSingle(),
+      const [profileRes, postsRes, connectionsRes] =
+        await Promise.all([
+          supabase
+            .from("profiles")
+            .select("id, full_name, role")
+            .eq("id", userId)
+            .maybeSingle(),
 
-        supabase
-          .from("posts")
-          .select(
-            `id, content, media_type, media_url, flagged, created_at,
-             author:profiles!posts_author_id_fkey(
-               id, full_name, company_name, role, headline, avatar_url
-             ),
-             comments(id, content, created_at,
-               author:profiles!comments_author_id_fkey(
-                 id, full_name, company_name, role
-               )
-             ),
-             reactions(post_id, user_id, emoji)`
-          )
-          .order("created_at", { ascending: false })
-          .limit(50),
-      ]);
+          supabase
+            .from("posts")
+            .select(
+              `id, author_id, content, media_type, media_url, flagged, created_at,
+               author:profiles!posts_author_id_fkey(
+                 id, full_name, company_name, role, headline, avatar_url
+               ),
+               comments(id, content, created_at,
+                 author:profiles!comments_author_id_fkey(
+                   id, full_name, company_name, role
+                 )
+               ),
+               reactions(post_id, user_id, emoji)`
+            )
+            .order("created_at", { ascending: false })
+            .limit(50),
+
+          supabase
+            .from("connections")
+            .select("id, requester_id, addressee_id, status")
+            .or(
+              `requester_id.eq.${userId},addressee_id.eq.${userId}`
+            ),
+        ]);
 
       setMe(profileRes.data || null);
-      setPosts(postsRes.data || []);
+
+      // Connections-based ranking (brief: role-adaptive feed, not static).
+      // Posts authored by people I am connected to float to the top; the
+      // rest follow by recency. Everyone still sees the whole community.
+      const connectedRows = connectionsRes.data || [];
+      const connectedIds = new Set(
+        connectedRows
+          .filter((link) => link.status === "connected")
+          .map((link) =>
+            link.requester_id === userId
+              ? link.addressee_id
+              : link.requester_id
+          )
+      );
+
+      const ranked = [...(postsRes.data || [])].sort((a, b) => {
+        const aConn = connectedIds.has(a.author_id) ? 0 : 1;
+        const bConn = connectedIds.has(b.author_id) ? 0 : 1;
+        if (aConn !== bConn) return aConn - bConn;
+        return (
+          new Date(b.created_at).getTime() -
+          new Date(a.created_at).getTime()
+        );
+      });
+
+      setPosts(ranked);
     } catch {
       // Keep existing state; the UI shows empty lists.
     } finally {

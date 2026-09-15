@@ -1,9 +1,11 @@
 import {
   Alert,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useCallback, useEffect, useState } from "react";
@@ -46,6 +48,12 @@ export default function Network() {
   const [busyId, setBusyId] = useState(null);
   const [reloadFlag, setReloadFlag] = useState(0);
 
+  // Endorsements (brief 2.3 — skills endorsed by connections)
+  const [endorsements, setEndorsements] = useState([]);
+  const [endorseModal, setEndorseModal] = useState(null); // { person }
+  const [endorseSkill, setEndorseSkill] = useState("");
+  const [endorseBusy, setEndorseBusy] = useState(false);
+
   // ---- Data loading ------------------------------------
 
   const load = useCallback(async () => {
@@ -65,12 +73,12 @@ export default function Network() {
     const { supabase, userId } = session;
 
     try {
-      const [profileRes, peopleRes, linksRes] =
+      const [profileRes, peopleRes, linksRes, endorsementsRes] =
         await Promise.all([
           supabase
             .from("profiles")
             .select(
-              "id, full_name, company_name, role, headline, programme, campus, avatar_url"
+              "id, full_name, company_name, role, headline, programme, campus, avatar_url, skills"
             )
             .eq("id", userId)
             .maybeSingle(),
@@ -78,7 +86,7 @@ export default function Network() {
           supabase
             .from("profiles")
             .select(
-              "id, full_name, company_name, role, headline, programme, campus, avatar_url"
+              "id, full_name, company_name, role, headline, programme, campus, avatar_url, skills"
             )
             .neq("id", userId)
             .order("created_at", {
@@ -99,11 +107,23 @@ export default function Network() {
             .order("created_at", {
               ascending: false,
             }),
+
+          supabase
+            .from("endorsements")
+            .select(
+              `id, recipient_id, endorser_id, skill, comment, created_at,
+               endorser:profiles!endorsements_endorser_id_fkey(full_name, company_name)`
+            )
+            .order("created_at", {
+              ascending: false,
+            })
+            .limit(100),
         ]);
 
       setMe(profileRes.data || null);
       setDirectory(peopleRes.data || []);
       setLinks(linksRes.data || []);
+      setEndorsements(endorsementsRes.data || []);
     } catch {
       // Keep existing state; the UI shows empty lists.
     } finally {
@@ -121,6 +141,7 @@ export default function Network() {
   // graph edges this user may see are ever delivered.
   useEffect(() => {
     let channel = null;
+    let channelEndorse = null;
     let active = true;
 
     async function subscribe() {
@@ -139,17 +160,29 @@ export default function Network() {
           () => setReloadFlag((f) => f + 1)
         )
         .subscribe();
+
+      channelEndorse = session.supabase
+        .channel("network-endorsements")
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "endorsements",
+          },
+          () => setReloadFlag((f) => f + 1)
+        )
+        .subscribe();
     }
 
     subscribe();
 
     return () => {
       active = false;
-      if (channel) {
-        const supabase = getSupabase();
-        if (supabase) {
-          supabase.removeChannel(channel);
-        }
+      const supabase = getSupabase();
+      if (supabase) {
+        if (channel) supabase.removeChannel(channel);
+        if (channelEndorse) supabase.removeChannel(channelEndorse);
       }
     };
   }, []);
@@ -195,6 +228,66 @@ export default function Network() {
   const connected = links.filter(
     (link) => link.status === "connected"
   );
+
+  // ---- Endorsements (brief 2.3) ---------------------------
+
+  // Every endorsement this person has received.
+  function endorsementsFor(recipientId) {
+    return endorsements.filter(
+      (e) => e.recipient_id === recipientId
+    );
+  }
+
+  // Have I already endorsed this skill for this person?
+  function alreadyEndorsed(recipientId, skill) {
+    const clean = String(skill || "").toLowerCase().trim();
+    if (!clean) return false;
+    return endorsements.some(
+      (e) =>
+        e.recipient_id === recipientId &&
+        e.endorser_id === me?.id &&
+        String(e.skill || "").toLowerCase().trim() === clean
+    );
+  }
+
+  async function submitEndorsement() {
+    const skill = endorseSkill.trim();
+    if (!skill || endorseBusy) return;
+
+    if (!endorseModal?.person?.id || !me?.id) return;
+    if (endorseModal.person.id === me.id) return;
+
+    setEndorseBusy(true);
+
+    try {
+      const session = await ensureSupabaseSession();
+      if (!session) {
+        Alert.alert("Not Available", "Endorsements require the Supabase backend.");
+        return;
+      }
+
+      const { error } = await session.supabase
+        .from("endorsements")
+        .insert({
+          recipient_id: endorseModal.person.id,
+          endorser_id: session.userId,
+          skill: skill.slice(0, 80),
+        });
+
+      if (error) throw error;
+
+      setEndorseModal(null);
+      setEndorseSkill("");
+      setReloadFlag((f) => f + 1);
+    } catch (error) {
+      Alert.alert(
+        "Could not endorse",
+        error?.message || "Please try again."
+      );
+    } finally {
+      setEndorseBusy(false);
+    }
+  }
 
   // ---- Actions ------------------------------------------
 
@@ -395,8 +488,44 @@ export default function Network() {
           </View>
         </View>
 
+        {(() => {
+          const received = endorsementsFor(person.id);
+          return received.length > 0 ? (
+            <View style={styles.endorseRow}>
+              <Text style={styles.endorseLabel}>
+                ⭐ Endorsements
+              </Text>
+
+              {received.slice(0, 4).map((e) => (
+                <View
+                  key={e.id}
+                  style={styles.endorseChip}
+                >
+                  <Text style={styles.endorseChipText}>
+                    {e.skill}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null;
+        })()}
+
         <View style={styles.cardActions}>
           {actionButtonFor(person)}
+
+          {person.id !== me?.id && (
+            <Pressable
+              style={styles.endorseButton}
+              onPress={() => {
+                setEndorseSkill("");
+                setEndorseModal({ person });
+              }}
+            >
+              <Text style={styles.endorseButtonText}>
+                ⭐ Endorse
+              </Text>
+            </Pressable>
+          )}
         </View>
       </View>
     );
@@ -585,12 +714,13 @@ export default function Network() {
   }
 
   return (
-    <ScrollView
-      style={styles.screen}
-      contentContainerStyle={
-        styles.content
-      }
-    >
+    <>
+      <ScrollView
+        style={styles.screen}
+        contentContainerStyle={
+          styles.content
+        }
+      >
       <Text style={styles.heading}>
         My Network
       </Text>
@@ -626,6 +756,142 @@ export default function Network() {
 
       {renderBody()}
     </ScrollView>
+
+    {endorseModal?.person && (
+      <Modal
+        visible={!!endorseModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEndorseModal(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable
+            style={styles.modalBackdrop}
+            onPress={() => setEndorseModal(null)}
+          />
+
+          <View style={styles.modalPanel}>
+            <Text style={styles.modalTitle}>
+              ⭐ Endorse {displayName(endorseModal.person)}
+            </Text>
+
+            <Text style={styles.modalSubtitle}>
+              Endorse a skill you have seen this
+              member demonstrate.
+            </Text>
+
+            {(Array.isArray(
+              endorseModal.person.skills
+            ) &&
+              endorseModal.person.skills.length >
+                0) ||
+            endorseSkill.trim() ? (
+              <>
+                <Text style={styles.modalLabel}>
+                  Choose from their skills
+                </Text>
+
+                {Array.isArray(
+                  endorseModal.person.skills
+                ) &&
+                  endorseModal.person.skills
+                    .slice(0, 12)
+                    .map((skill) => {
+                      const selected =
+                        endorseSkill ===
+                        skill;
+                      return (
+                        <Pressable
+                          key={skill}
+                          style={[
+                            styles.skillChip,
+                            selected &&
+                              styles.skillChipSelected,
+                          ]}
+                          onPress={() =>
+                            setEndorseSkill(
+                              selected
+                                ? ""
+                                : skill
+                            )
+                          }
+                        >
+                          <Text
+                            style={[
+                              styles.skillChipText,
+                              selected &&
+                                styles.skillChipTextSelected,
+                            ]}
+                          >
+                            {skill}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+              </>
+            ) : (
+              <Text style={styles.modalEmptySkills}>
+                This member has not added skills yet —
+                type one below.
+              </Text>
+            )}
+
+            <Text style={styles.modalLabel}>
+              Or type your own
+            </Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="e.g. Public speaking, Python, Team leadership…"
+              placeholderTextColor="#94A3B8"
+              value={endorseSkill}
+              onChangeText={setEndorseSkill}
+              maxLength={80}
+            />
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={styles.modalCancel}
+                onPress={() =>
+                  setEndorseModal(null)
+                }
+              >
+                <Text style={styles.modalCancelText}>
+                  Cancel
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={[
+                  styles.modalSubmit,
+                  (!endorseSkill.trim() ||
+                    endorseBusy) &&
+                    styles.buttonDisabled,
+                ]}
+                disabled={
+                  !endorseSkill.trim() ||
+                  endorseBusy
+                }
+                onPress={submitEndorsement}
+              >
+                <Text
+                  style={styles.modalSubmitText}
+                >
+                  {endorseBusy
+                    ? "Endorsing…"
+                    : alreadyEndorsed(
+                        endorseModal.person.id,
+                        endorseSkill
+                      )
+                    ? "Endorse again"
+                    : "Send endorsement"}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    )}
+  </>
   );
 }
 
@@ -730,6 +996,45 @@ const styles = StyleSheet.create({
   cardActions: {
     marginTop: 12,
   },
+  endorseRow: {
+    marginTop: 10,
+  },
+  endorseLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#5B6B85",
+    marginBottom: 6,
+  },
+  endorseChip: {
+    backgroundColor: "#FFF7E6",
+    borderColor: "#FDE68A",
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    alignSelf: "flex-start",
+    marginBottom: 5,
+  },
+  endorseChipText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#92400E",
+  },
+  endorseButton: {
+    backgroundColor: "#FFF7E6",
+    borderColor: "#FCD34D",
+    borderWidth: 1,
+    borderRadius: 9,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    marginTop: 8,
+  },
+  endorseButtonText: {
+    color: "#92400E",
+    fontSize: 12,
+    fontWeight: "800",
+  },
   buttonRow: {
     flexDirection: "row",
   },
@@ -803,6 +1108,114 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#5B6B85",
     textAlign: "center",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.55)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  modalPanel: {
+    width: "92%",
+    maxWidth: 460,
+    maxHeight: "88%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 18,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0F1B33",
+  },
+  modalSubtitle: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  modalLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#5B6B85",
+    marginBottom: 8,
+    marginTop: 6,
+  },
+  modalEmptySkills: {
+    fontSize: 12,
+    color: "#94A3B8",
+    fontStyle: "italic",
+    marginBottom: 6,
+  },
+  skillChip: {
+    backgroundColor: "#F1F5F9",
+    borderColor: "#E2E8F0",
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    alignSelf: "flex-start",
+    marginRight: 6,
+    marginBottom: 6,
+  },
+  skillChipSelected: {
+    backgroundColor: "#FFEED9",
+    borderColor: "#FCD34D",
+  },
+  skillChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#334155",
+  },
+  skillChipTextSelected: {
+    color: "#92400E",
+  },
+  modalInput: {
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: "#0F1B33",
+    marginTop: 6,
+  },
+  modalActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 10,
+    marginTop: 14,
+  },
+  modalCancel: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    backgroundColor: "#EEF2F7",
+  },
+  modalCancelText: {
+    color: "#475569",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  modalSubmit: {
+    backgroundColor: "#F59E0B",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  modalSubmitText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  buttonDisabled: {
+    opacity: 0.5,
   },
 });
 

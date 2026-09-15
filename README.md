@@ -26,6 +26,8 @@ One trusted ecosystem with **four user types**, connecting the entire community:
 - **Real-time everything** — Supabase Realtime WebSockets (no polling) for feed posts, comments, reactions, direct messages, and notifications.
 - **Video/photo posts** — images compressed on pick; videos get generated thumbnails (expo-video-thumbnails) before storage; media stored per-owner in a storage bucket with RLS.
 - **Three analytics dashboards** — student, business, and admin (visual charts, not raw numbers).
+- **Connections-based feed** — the activity feed ranks posts from your accepted connections first (role-adaptive, live — not static dummy content).
+- **Admin announcements** — admins broadcast targeted announcements (all / students / alumni / businesses / admins); a DB trigger notifies every targeted user in real time and each dashboard shows the relevant updates.
 - **Events with RSVPs**, career pathway explorer, endorsements, POPIA consent + privacy policy, profile visibility controls.
 
 ## 2. Technology Choices (and why)
@@ -68,9 +70,9 @@ One trusted ecosystem with **four user types**, connecting the entire community:
 └────────────────────────────────┘
 ```
 
-**Database schema (13 tables):** `profiles`, `posts`, `comments`, `reactions`, `connections`, `messages`, `notifications`, `opportunities`, `applications`, `events`, `event_rsvps`, `endorsements`, `alumni_verifications`
+**Database schema (14 tables):** `profiles`, `posts`, `comments`, `reactions`, `connections`, `messages`, `notifications`, `opportunities`, `applications`, `events`, `event_rsvps`, `endorsements`, `alumni_verifications`, `announcements`
 
-**Migrations:** `supabase/migrations/0001_init.sql` → `0004_alumni_verification.sql` (run in order)
+**Migrations:** `supabase/migrations/0001_init.sql` → `0005_announcements.sql` (run in order)
 
 ## 4. Setup Instructions
 
@@ -91,6 +93,7 @@ supabase/migrations/0001_init.sql
 supabase/migrations/0002_realtime_social.sql
 supabase/migrations/0003_events_video.sql
 supabase/migrations/0004_alumni_verification.sql
+supabase/migrations/0005_announcements.sql
 ```
 Copy `.env.example` to `.env` and fill in your project values:
 ```

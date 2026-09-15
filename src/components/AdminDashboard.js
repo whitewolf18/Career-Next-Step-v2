@@ -15,6 +15,8 @@ import NotificationBell from "./NotificationBell";
 import { getSupabase, supabaseErrorMessage } from "../lib/supabase";
 import { AdminAnalyticsSection } from "./AnalyticsCharts";
 import Events from "./Events";
+import Announcements from "./Announcements";
+import ChatBot from "./ChatBot";
 
 function AdminDashboard({ user, onLogout }) {
   const [page, setPage] = useState("dashboard");
@@ -22,6 +24,7 @@ function AdminDashboard({ user, onLogout }) {
   const [accounts, setAccounts] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [applications, setApplications] = useState([]);
+  const [alumniRequests, setAlumniRequests] = useState([]);
   const [usingSupabase, setUsingSupabase] = useState(false);
 
   // =====================================
@@ -78,7 +81,7 @@ function AdminDashboard({ user, onLogout }) {
 
     if (supabase) {
       try {
-        const [profilesResult, opportunitiesResult, applicationsResult] =
+        const [profilesResult, opportunitiesResult, applicationsResult, alumniResult] =
           await Promise.all([
             supabase
               .from("profiles")
@@ -94,6 +97,10 @@ function AdminDashboard({ user, onLogout }) {
                 "*, opportunity:opportunities(title), applicant:profiles!applications_applicant_id_fkey(email, full_name, company_name)"
               )
               .order("created_at", { ascending: false }),
+            supabase
+              .from("alumni_verifications")
+              .select("*, profile:profiles!alumni_verifications_user_id_fkey(full_name, email, programme, avatar_url)")
+              .order("created_at", { ascending: false }),
           ]);
 
         if (profilesResult.error) throw profilesResult.error;
@@ -107,6 +114,20 @@ function AdminDashboard({ user, onLogout }) {
           (opportunitiesResult.data || []).map((row) =>
             mapOpportunityRow(row, profileRows)
           )
+        );
+
+        setAlumniRequests(
+          (alumniResult.data || []).map((row) => ({
+            id: row.id,
+            userId: row.user_id,
+            email: row.profile?.email || row.email || "",
+            name: row.profile?.full_name || "",
+            programme: row.programme || row.profile?.programme || "",
+            graduationYear: row.graduation_year,
+            alumniNumber: row.alumni_number,
+            status: row.status,
+            reviewNote: row.review_note,
+          }))
         );
 
         if (applicationsResult.error) {
@@ -291,6 +312,11 @@ function AdminDashboard({ user, onLogout }) {
   const pendingJobs =
     jobs.filter(
       (job) => job.dbStatus === "pending"
+    ).length;
+
+  const pendingAlumni =
+    alumniRequests.filter(
+      (request) => request.status === "pending"
     ).length;
 
   // =====================================
@@ -542,6 +568,100 @@ function AdminDashboard({ user, onLogout }) {
   }
 
   // =====================================
+  // ALUMNI VERIFICATION ACTIONS  (brief 2.1 identity verification)
+  // =====================================
+
+  // Approve an alumni request: mark verified + flag the profile badge.
+  async function approveAlumni(request) {
+    const supabase = getSupabase();
+
+    if (!supabase || !request.id) {
+      Alert.alert(
+        "Not Available",
+        "Alumni verification requires the Supabase backend."
+      );
+      return;
+    }
+
+    try {
+      const { error: verifyError } = await supabase
+        .from("alumni_verifications")
+        .update({
+          status: "approved",
+          reviewed_at: new Date().toISOString(),
+        })
+        .eq("id", request.id);
+
+      if (verifyError) throw verifyError;
+
+      // Flag the profile as verified - the DB trigger notifies the alumnus.
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({ is_verified: true })
+        .eq("id", request.userId);
+
+      if (profileError) throw profileError;
+
+      Alert.alert(
+        "Verified",
+        `${request.name || "The alumnus"} is now verified and badged as an alumni.`
+      );
+
+      await refreshData();
+    } catch (error) {
+      Alert.alert(
+        "Error",
+        error?.message || "Could not verify the alumni request."
+      );
+    }
+  }
+
+  // Reject an alumni request with an optional note.
+  function rejectAlumni(request) {
+    Alert.alert(
+      "Reject Request",
+      "Recording a short reason helps the alumnus resubmit correctly.\n\n(Leave blank to reject without a reason.)",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Reject",
+          style: "destructive",
+          onPress: () => {
+            Alert.alert(
+              "Reason (optional)",
+              "Add a note the alumnus will see next time they check.",
+              [
+                { text: "Skip", style: "cancel" },
+                {
+                  text: "Reject",
+                  style: "destructive",
+                  onPress: async () => {
+                    const supabase = getSupabase();
+                    if (!supabase || !request.id) return;
+                    try {
+                      const { error } = await supabase
+                        .from("alumni_verifications")
+                        .update({ status: "rejected" })
+                        .eq("id", request.id);
+                      if (error) throw error;
+                      await refreshData();
+                    } catch (error) {
+                      Alert.alert(
+                        "Error",
+                        error?.message || "Could not reject the request."
+                      );
+                    }
+                  },
+                },
+              ]
+            );
+          },
+        },
+      ]
+    );
+  }
+
+  // =====================================
   // SIDEBAR / MOBILE NAVIGATION
   // =====================================
 
@@ -648,7 +768,8 @@ function AdminDashboard({ user, onLogout }) {
             </Text>
 
             {pendingBusinesses +
-              pendingJobs >
+              pendingJobs +
+              pendingAlumni >
               0 && (
               <View
                 style={styles.navBadge}
@@ -659,7 +780,8 @@ function AdminDashboard({ user, onLogout }) {
                   }
                 >
                   {pendingBusinesses +
-                    pendingJobs}
+                    pendingJobs +
+                    pendingAlumni}
                 </Text>
               </View>
             )}
@@ -712,6 +834,32 @@ function AdminDashboard({ user, onLogout }) {
               ]}
             >
               Applications
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={[
+              styles.navButton,
+              page === "announcements" &&
+                styles.navButtonActive,
+            ]}
+            onPress={() =>
+              setPage("announcements")
+            }
+          >
+            <Text style={styles.navIcon}>
+              📣
+            </Text>
+
+            <Text
+              style={[
+                styles.navText,
+                page ===
+                  "announcements" &&
+                  styles.navTextActive,
+              ]}
+            >
+              Announcements
             </Text>
           </Pressable>
 
@@ -1578,14 +1726,185 @@ function AdminDashboard({ user, onLogout }) {
                   </View>
                 )
               )}
+
+          <Text
+            style={styles.sectionTitle}
+          >
+            🎓 Alumni Verifications ({" "}
+            {pendingAlumni} pending )
+          </Text>
+
+          {pendingAlumni === 0
+            ? renderEmpty(
+                "No alumni verification requests awaiting review."
+              )
+            : alumniRequests
+                .filter(
+                  (request) =>
+                    request.status ===
+                    "pending"
+                )
+                .map((request) => (
+                  <View
+                    style={
+                      styles.userCard
+                    }
+                    key={request.id}
+                  >
+                    <View
+                      style={
+                        styles.userCardTop
+                      }
+                    >
+                      <View
+                        style={
+                          styles.userCardAvatar
+                        }
+                      >
+                        <Text
+                          style={
+                            styles.userCardAvatarText
+                          }
+                        >
+                          {(
+                            request.name ||
+                            "A"
+                          )
+                            .charAt(0)
+                            .toUpperCase()}
+                        </Text>
+                      </View>
+
+                      <View
+                        style={
+                          styles.userCardInfo
+                        }
+                      >
+                        <Text
+                          style={
+                            styles.userCardName
+                          }
+                        >
+                          {request.name ||
+                            "Alumni Request"}
+                        </Text>
+
+                        <Text
+                          style={
+                            styles.userCardEmail
+                          }
+                        >
+                          {request.email}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View
+                      style={
+                        styles.alumniDetails
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.alumniDetailText
+                        }
+                      >
+                        🎓 {request.programme ||
+                          "Programme not stated"}
+                      </Text>
+
+                      <Text
+                        style={
+                          styles.alumniDetailText
+                        }
+                      >
+                        📅 Class of{" "}
+                        {request.graduationYear ||
+                          "—"}
+                      </Text>
+
+                      {request.alumniNumber && (
+                        <Text
+                          style={
+                            styles.alumniDetailText
+                          }
+                        >
+                          🪪 Alumni no.{" "}
+                          {request.alumniNumber}
+                        </Text>
+                      )}
+                    </View>
+
+                    <View
+                      style={
+                        styles.userCardBottom
+                      }
+                    >
+                      <View
+                        style={[
+                          styles.roleBadge,
+                          styles.rolePending,
+                        ]}
+                      >
+                        <Text
+                          style={
+                            styles.roleBadgeText
+                          }
+                        >
+                          Awaiting Review
+                        </Text>
+                      </View>
+
+                      <View
+                        style={
+                          styles.jobActions
+                        }
+                      >
+                        <Pressable
+                          style={
+                            styles.approveButton
+                          }
+                          onPress={() =>
+                            approveAlumni(
+                              request
+                            )
+                          }
+                        >
+                          <Text
+                            style={
+                              styles.approveButtonText
+                            }
+                          >
+                            Verify
+                          </Text>
+                        </Pressable>
+
+                        <Pressable
+                          style={
+                            styles.deleteButton
+                          }
+                          onPress={() =>
+                            rejectAlumni(
+                              request
+                            )
+                          }
+                        >
+                          <Text
+                            style={
+                              styles.deleteButtonText
+                            }
+                          >
+                            Reject
+                          </Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  </View>
+                ))}
         </ScrollView>
       </>
     );
   }
-
-  // =====================================
-  // JOBS
-  // =====================================
 
   function renderJobs() {
     return (
@@ -2401,6 +2720,15 @@ function AdminDashboard({ user, onLogout }) {
           <Events isAdmin={true} />
         )}
 
+        {page === "announcements" && (
+          <View style={styles.page}>
+            {renderTopbar("Announcements")}
+            <View style={styles.announcementWrap}>
+              <Announcements isAdmin={true} />
+            </View>
+          </View>
+        )}
+
         {page === "admin-accounts" &&
           user?.role === "admin" &&
           user?.adminLevel ===
@@ -2410,6 +2738,9 @@ function AdminDashboard({ user, onLogout }) {
             />
           )}
       </View>
+
+      {/* PERSISTENT AI HELPER (brief 2.6) — Nexi stays on after onboarding. */}
+      <ChatBot accent="#7C3AED" />
     </View>
   );
 }
@@ -2658,6 +2989,10 @@ const styles = StyleSheet.create({
   // =====================================
 
   page: {
+    flex: 1,
+  },
+
+  announcementWrap: {
     flex: 1,
   },
 
@@ -3013,6 +3348,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#ecfdf3",
   },
 
+  rolePending: {
+    backgroundColor: "#fef7e0",
+  },
+
   roleAdmin: {
     backgroundColor: "#f3e8ff",
   },
@@ -3021,6 +3360,23 @@ const styles = StyleSheet.create({
     color: "#344054",
     fontSize: 10,
     fontWeight: "800",
+  },
+
+  alumniDetails: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 10,
+  },
+
+  alumniDetailText: {
+    backgroundColor: "#f1f5f9",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    color: "#475569",
+    fontSize: 11,
+    fontWeight: "600",
   },
 
   deleteButton: {
