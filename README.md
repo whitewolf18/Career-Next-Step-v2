@@ -67,12 +67,13 @@ One trusted ecosystem with **four user types**, connecting the entire community:
 │  Edge Functions (Deno):        │
 │   • ai-assistant (OpenAI)      │
 │   • create-admin               │
+│   • delete-user (admin removal)│
 └────────────────────────────────┘
 ```
 
 **Database schema (14 tables):** `profiles`, `posts`, `comments`, `reactions`, `connections`, `messages`, `notifications`, `opportunities`, `applications`, `events`, `event_rsvps`, `endorsements`, `alumni_verifications`, `announcements`
 
-**Migrations:** `supabase/migrations/0001_init.sql` → `0005_announcements.sql` (run in order)
+**Migrations:** `supabase/migrations/0001_init.sql` → `0006_admin_deletes.sql` (run in order)
 
 ## 4. Setup Instructions
 
@@ -94,6 +95,7 @@ supabase/migrations/0002_realtime_social.sql
 supabase/migrations/0003_events_video.sql
 supabase/migrations/0004_alumni_verification.sql
 supabase/migrations/0005_announcements.sql
+supabase/migrations/0006_admin_deletes.sql
 ```
 Copy `.env.example` to `.env` and fill in your project values:
 ```

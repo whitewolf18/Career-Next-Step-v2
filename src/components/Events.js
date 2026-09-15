@@ -50,6 +50,20 @@ const styles = StyleSheet.create({
   detailLabel: { fontSize: 12, fontWeight: "700", color: "#64748B", marginBottom: 6, textTransform: "uppercase" },
   detailVal: { fontSize: 15, color: "#1B2537", lineHeight: 22 },
   detailSub: { fontSize: 13, color: "#64748B", marginTop: 4 },
+  detailActions: { flexDirection: "row", gap: 10, paddingTop: 4 },
+  editBtn: { flex: 1, backgroundColor: "#208AEF", borderRadius: 10, paddingVertical: 12, alignItems: "center" },
+  editBtnText: { color: "#FFFFFF", fontSize: 14, fontWeight: "700" },
+  deleteBtn: { flex: 1, backgroundColor: "#FEE2E2", borderRadius: 10, paddingVertical: 12, alignItems: "center" },
+  deleteBtnText: { color: "#DC2626", fontSize: 14, fontWeight: "700" },
+  formPanel: { backgroundColor: "#FFFFFF", borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "90%", paddingHorizontal: 20, paddingTop: 20, paddingBottom: 30 },
+  formLabel: { fontSize: 12, fontWeight: "700", color: "#64748B", marginBottom: 6, textTransform: "uppercase" },
+  formInput: { backgroundColor: "#F6F8FB", borderWidth: 1, borderColor: "#E3E8F2", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: "#1B2537", marginBottom: 14 },
+  formTextarea: { minHeight: 90, textAlignVertical: "top" },
+  formRow: { flexDirection: "row", gap: 10 },
+  formCol: { flex: 1 },
+  submitBtn: { backgroundColor: "#208AEF", borderRadius: 10, paddingVertical: 14, alignItems: "center", marginTop: 6, marginBottom: 10 },
+  submitBtnDisabled: { opacity: 0.6 },
+  submitBtnText: { color: "#FFFFFF", fontSize: 15, fontWeight: "800" },
 });
 
 export default function Events({ isAdmin = false }) {
@@ -129,12 +143,22 @@ export default function Events({ isAdmin = false }) {
     try {
       const sa = new Date(formDate + "T" + formTime + ":00");
       const ea = formEnd ? new Date(formDate + "T" + formEnd + ":00") : null;
-      const d = { title: formTitle.trim(), description: formDesc.trim(), location: formLoc.trim(), starts_at: sa.toISOString(), ends_at: ea ? ea.toISOString() : null };
-      if (editingEvent) await s.supabase.from("events").update(d).eq("id", editingEvent.id);
-      else await s.supabase.from("events").insert({ ...d, created_by: s.userId });
+      if (isNaN(sa.getTime())) {
+        Alert.alert("Invalid date", "Use the format YYYY-MM-DD for the date and HH:MM for the time.");
+        return;
+      }
+      const d = { title: formTitle.trim(), description: formDesc.trim(), location: formLoc.trim(), starts_at: sa.toISOString(), ends_at: ea && !isNaN(ea.getTime()) ? ea.toISOString() : null };
+      if (editingEvent) {
+        const { error } = await s.supabase.from("events").update(d).eq("id", editingEvent.id);
+        if (error) throw error;
+      } else {
+        const { error } = await s.supabase.from("events").insert({ ...d, created_by: s.userId });
+        if (error) throw error;
+      }
       setShowForm(false); loadEvents();
-    } catch { Alert.alert("Error", "Could not save event."); }
-    finally { setSubmitting(false); }
+    } catch (e) {
+      Alert.alert("Could not save event", e?.message || "Please try again.");
+    } finally { setSubmitting(false); }
   };
 
   const deleteEvent = (ev) => {
@@ -209,6 +233,58 @@ export default function Events({ isAdmin = false }) {
                 <View style={styles.detailSec}><Text style={styles.detailLabel}>Date & Time</Text><Text style={styles.detailVal}>{fmtDate(selectedEvent.starts_at)} at {fmtTime(selectedEvent.starts_at)}</Text>{selectedEvent.ends_at && <Text style={styles.detailSub}>Until {fmtTime(selectedEvent.ends_at)}</Text>}</View>
                 <View style={styles.detailSec}><Text style={styles.detailLabel}>Location</Text><Text style={styles.detailVal}>{selectedEvent.location || "Online Event"}</Text></View>
                 {selectedEvent.description && <View style={styles.detailSec}><Text style={styles.detailLabel}>Description</Text><Text style={styles.detailVal}>{selectedEvent.description}</Text></View>}
+                {isAdmin && (
+                  <View style={styles.detailActions}>
+                    <Pressable style={styles.editBtn} onPress={() => { setSelectedEvent(null); openEdit(selectedEvent); }}>
+                      <Text style={styles.editBtnText}>Edit</Text>
+                    </Pressable>
+                    <Pressable style={styles.deleteBtn} onPress={() => deleteEvent(selectedEvent)}>
+                      <Text style={styles.deleteBtnText}>Delete</Text>
+                    </Pressable>
+                  </View>
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      )}
+      {showForm && (
+        <Modal visible={showForm} transparent animationType="slide" onRequestClose={() => setShowForm(false)}>
+          <View style={styles.overlay}>
+            <Pressable style={styles.overlayBg} onPress={() => setShowForm(false)} />
+            <View style={styles.formPanel}>
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                <View style={styles.detailHeader}>
+                  <Text style={styles.detailTitle}>{editingEvent ? "Edit Event" : "New Event"}</Text>
+                  <Pressable onPress={() => setShowForm(false)}><Text style={styles.closeBtn}>X</Text></Pressable>
+                </View>
+
+                <Text style={styles.formLabel}>Title *</Text>
+                <TextInput style={styles.formInput} value={formTitle} onChangeText={setFormTitle} placeholder="e.g. CV & Career Fair" placeholderTextColor="#94a3b8" />
+
+                <Text style={styles.formLabel}>Date *</Text>
+                <TextInput style={styles.formInput} value={formDate} onChangeText={setFormDate} placeholder="YYYY-MM-DD" placeholderTextColor="#94a3b8" autoCapitalize="none" />
+
+                <View style={styles.formRow}>
+                  <View style={styles.formCol}>
+                    <Text style={styles.formLabel}>Start time *</Text>
+                    <TextInput style={styles.formInput} value={formTime} onChangeText={setFormTime} placeholder="HH:MM" placeholderTextColor="#94a3b8" autoCapitalize="none" />
+                  </View>
+                  <View style={styles.formCol}>
+                    <Text style={styles.formLabel}>End time</Text>
+                    <TextInput style={styles.formInput} value={formEnd} onChangeText={setFormEnd} placeholder="HH:MM" placeholderTextColor="#94a3b8" autoCapitalize="none" />
+                  </View>
+                </View>
+
+                <Text style={styles.formLabel}>Location</Text>
+                <TextInput style={styles.formInput} value={formLoc} onChangeText={setFormLoc} placeholder="e.g. Richfield Cape Town Campus" placeholderTextColor="#94a3b8" />
+
+                <Text style={styles.formLabel}>Description</Text>
+                <TextInput style={[styles.formInput, styles.formTextarea]} value={formDesc} onChangeText={setFormDesc} placeholder="What should students expect?" placeholderTextColor="#94a3b8" multiline numberOfLines={4} />
+
+                <Pressable style={[styles.submitBtn, submitting && styles.submitBtnDisabled]} disabled={submitting} onPress={submitForm}>
+                  <Text style={styles.submitBtnText}>{submitting ? "Saving…" : editingEvent ? "Save Changes" : "Publish Event"}</Text>
+                </Pressable>
               </ScrollView>
             </View>
           </View>

@@ -448,6 +448,29 @@ function AdminDashboard({ user, onLogout }) {
               return;
             }
 
+            // Full removal via the delete-user Edge Function (service-role):
+            // removes the auth login, which cascades to the profile and all
+            // child rows. Falls back to an RLS profile-only delete when the
+            // function isn't deployed yet.
+            let lastError = null;
+
+            try {
+              const { error: fnError } = await supabase.functions.invoke(
+                "delete-user",
+                { body: { user_id: account.id } }
+              );
+
+              if (!fnError) {
+                Alert.alert("Deleted", "The account has been removed.");
+                await refreshData();
+                return;
+              }
+
+              lastError = fnError;
+            } catch (fnError) {
+              lastError = fnError;
+            }
+
             const { error } = await supabase
               .from("profiles")
               .delete()
@@ -456,11 +479,18 @@ function AdminDashboard({ user, onLogout }) {
             if (error) {
               Alert.alert(
                 "Error",
-                supabaseErrorMessage(error)
+                supabaseErrorMessage(error) ||
+                  lastError?.message ||
+                  "Could not delete the user."
               );
               return;
             }
 
+            Alert.alert(
+              "Deleted",
+              "The user's profile has been removed. (Deploy the delete-user " +
+                "Edge Function to also remove their login.)"
+            );
             await refreshData();
           },
         },
@@ -2713,7 +2743,20 @@ function AdminDashboard({ user, onLogout }) {
           renderApplications()}
 
         {page === "statistics" && (
-          <AdminAnalyticsSection />
+          <View style={styles.page}>
+            {renderTopbar("Statistics")}
+            <ScrollView
+              style={styles.announcementWrap}
+              contentContainerStyle={
+                styles.pageContent
+              }
+              showsVerticalScrollIndicator={
+                true
+              }
+            >
+              <AdminAnalyticsSection />
+            </ScrollView>
+          </View>
         )}
 
         {page === "events" && (
